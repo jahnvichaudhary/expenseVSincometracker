@@ -1,66 +1,102 @@
-Expense & Income Tracker
-Problem — what real problem does this solve
-Most people lose track of where their money goes. Spreadsheets are too manual, and full-blown accounting software is overkill for personal finance. This tracker solves the gap between "too simple to be useful" and "too complex to bother with." It gives users a single place to log transactions, see their cash flow at a glance, and understand spending patterns without exporting CSVs or learning double-entry bookkeeping.
+# Expense & Income Tracker
 
-Real problems addressed:
+A self-hosted, lightweight personal finance dashboard designed to bridge the gap between "too simple to be useful" (spreadsheets) and "too complex to bother with" (enterprise accounting software). It provides a fast, single-page application (SPA) to log transactions, monitor cash flow at a glance, and analyze spending patterns with minimal friction.
 
-Visibility: You can't fix what you can't see. A running list of income vs expenses makes cash flow tangible.
-Friction: If logging a transaction takes more than 10 seconds, people stop doing it. The UI is built around speed.
-Access: It's self-hosted. Your financial data stays on your machine, not in some app's cloud.
-Design decisions — why this approach over alternatives
-1. Java + Spring Boot instead of Node/Python/Go
-Why: The ecosystem around Spring Security and JPA is battle-tested for auth and data persistence. For a CRUD app with role-based access control, Spring Boot gets you there with fewer footguns than wiring JWT middleware by hand in Express.
-Trade-off: It's heavier than a Python FastAPI script. But it also gives you type safety, compile-time checks, and a clear project structure that won't fall apart when the codebase grows past a few files.
-2. Vanilla JS frontend instead of React/Vue
-Why: This is a single-page dashboard, not a social network. Adding a build step, npm, and a 100KB framework for a few forms and a table is overengineering.
-Trade-off: Manual DOM manipulation gets messy if you add 10 more features. For the current scope, it keeps deployment dead simple — no build, no bundler, just static files served by Spring Boot.
-3. JWT with HS256 instead of session cookies or RS256
-Why: Stateless auth means no server-side session store. HS256 is simpler to configure than RS256 (no key pairs to manage) and secure enough when the server is the only verifier.
-Trade-off: Token revocation is hard. You can't instantly invalidate a JWT without maintaining a deny-list. For a personal finance app where users rarely need admin lockouts, this is acceptable.
-4. H2 for dev, PostgreSQL for prod via profiles
-Why: spring-boot:run should work out of the box with zero config. H2 gives you that. In production, PostgreSQL gives you durability and concurrent access.
-Trade-off: Two databases means slight divergence in behavior (H2 syntax quirks). The schema stays simple enough that this hasn't been an issue.
-5. First-user-becomes-admin instead of a seeded admin
-Why: Zero setup. You register once and you're the admin. No SQL scripts to run, no default credentials to leak.
-Trade-off: If you forget your password and you're the only admin, there's no reset path without database access. This is acceptable for a single-user or small-team deployment.
-6. Single monolithic container instead of microservices
-Why: The app is one domain (transactions + auth). Splitting this into "auth-service" and "transaction-service" adds network latency, deployment complexity, and distributed transaction headaches for zero benefit.
-Trade-off: Can't scale auth and transactions independently. At current scale, that's a theoretical problem, not a real one.
-What I'd do differently at scale
-1. Split auth into an identity provider
-At scale, rolling your own JWT logic is a liability. I'd move to OAuth2/OIDC with a provider like Keycloak, Authentik, or a managed service. This offloads token management, MFA, password resets, and audit logging.
+## 🚀 Problem Statement
 
-2. Event-driven instead of synchronous writes
-If multiple users hit the app simultaneously, database contention becomes real. I'd introduce an event bus (RabbitMQ, NATS, or Kafka) so writes are async and the API responds immediately. The read model (dashboard) stays fast because it's decoupled from the write path.
+Most people lose track of where their money goes. Conventional options present clear pain points:
+* **Spreadsheets:** Too manual, prone to breaking formulas, and lack an optimized mobile/desktop entry flow.
+* **Accounting Software:** Overkill for personal finance, demanding a steep learning curve and double-entry bookkeeping.
+* **Commercial Apps:** Sell your data, lock functionality behind subscriptions, or force cloud-based storage on external servers.
 
-3. Read replicas and CQRS
-Dashboard queries are read-heavy. I'd split reads and writes: PostgreSQL primary for writes, read replicas for the dashboard. This also lets you optimize the read schema separately (denormalized views, materialized aggregations).
+This project addresses these exact challenges through three pillars:
+1. **Visibility:** A running list of income vs. expenses makes cash flow tangible. You can't fix what you can't see.
+2. **Low Friction:** If logging a transaction takes more than 10 seconds, people stop doing it. The entire user experience is built around rapid entry.
+3. **Data Access & Privacy:** Fully self-hosted. Your sensitive financial data stays on your machine, not in a corporate cloud.
 
-4. Separate frontend build
-Vanilla JS doesn't scale to 20+ features. At that point I'd add Vite + React (or Vue/Svelte) with proper component architecture, state management, and a separate static hosting layer (CDN).
+---
 
-5. Multi-stage deployment pipeline
-Right now it's "build a Docker image and run it." At scale I'd want:
+## 🏗️ Design Decisions & Trade-offs
 
-Blue/green or canary deployments
-Automated DB migrations with rollback scripts
-Feature flags so new UI doesn't ship to everyone at once
-6. Monitoring and observability
-Currently: logs to stdout, errors to the console. At scale: structured logging (JSON), metrics (Prometheus), tracing (OpenTelemetry), and alerts (PagerDuty/OpsGenie). You can't debug what you can't see.
+The architecture follows a strict **keep it simple and self-contained** philosophy. Below is the rationale behind the structural choices and the trade-offs accepted.
 
-Known limitations
-No password reset flow — If you forget your password and you're the only admin, you need database access to recover. This is fine for a self-hosted single-user setup but blocks real multi-user adoption.
+### 1. Java + Spring Boot (Backend)
+* **Why:** The ecosystem around Spring Security and Spring Data JPA is battle-tested for authentication and structured data persistence. For a CRUD application requiring role-based access control (RBAC), Spring Boot delivers high security with fewer "footguns" than wiring custom JWT middleware by hand in Express or Go.
+* **Trade-off:** It has a heavier memory footprint and slower startup time than a Python FastAPI script or Go binary. However, it provides compile-time type safety and a predictable project architecture that scales neatly without falling apart.
 
-No export functionality — Your data is trapped in the database. There's no CSV, PDF, or OFX export. If you want to migrate to another tool, you write SQL.
+### 2. Vanilla JavaScript (Frontend)
+* **Why:** The frontend is a single-page dashboard, not a complex social network. Avoiding a build step, `npm`, and an oversized framework (like React or Vue) for a handful of forms and tables prevents overengineering and keeps deployment dead simple.
+* **Trade-off:** Manual DOM manipulation will become messy and harder to maintain if feature density scales past the current scope. 
 
-No recurring transactions — You have to log rent, subscriptions, and salary manually every month. A production finance app needs scheduled/recurring entries.
+### 3. JWT Auth via HS256 (Stateless)
+* **Why:** Stateless authentication removes the need for a server-side session store. HS256 (symmetric signing) is trivial to configure compared to RS256 (asymmetric key pairs) and remains thoroughly secure because the backend application is the sole token issuer and verifier.
+* **Trade-off:** Token revocation is inherently difficult. You cannot instantly invalidate a JWT without maintaining an active token deny-list. For a self-hosted or small-team personal finance app where administrative lockouts are rare, this is a reasonable compromise.
 
-No multi-currency support — Everything is treated as a single currency. No exchange rates, no currency symbols beyond basic formatting.
+### 4. Dual Database Profiles: H2 & PostgreSQL
+* **Why:** Running the command `./mvnw spring-boot:run` should work out of the box with zero external configuration—which H2 database profiles provide perfectly for development. In production, a PostgreSQL profile swaps in to ensure multi-user concurrency and absolute data durability.
+* **Trade-off:** Supporting two database engines introduces minor syntax and dialect divergence risks. The application schema is kept clean and ANSI SQL-compliant to circumvent this.
 
-JWTs can't be revoked — Once issued, a token is valid until expiry. There's no logout endpoint that invalidates the token globally. A compromised token is usable for its full lifetime.
+### 5. First-User-Becomes-Admin Pattern
+* **Why:** Zero-configuration setup. The very first user to register on a clean deployment automatically receives the Administrative role. No SQL initialization scripts to run, no default credentials (`admin/admin`) to leak or forget to change.
+* **Trade-off:** If you lose your credentials and you are the lone administrator, there is no automated password reset path. Recovery requires direct database intervention via SQL.
 
-No tests — The project has unit tests in structure but coverage is minimal. Real production code needs integration tests for the auth flow, DB rollbacks, and edge cases around concurrent writes.
+### 6. Single Monolithic Container
+* **Why:** The application governs a single unified domain (transactions and authentication). Splitting this footprint into an `auth-service` and a `transaction-service` adds network latency, infrastructure complexity, and distributed transaction headaches for zero tangible benefit.
+* **Trade-off:** Auth logic and transaction workflows cannot scale independently. At the current operational scale, this remains a purely theoretical problem.
 
-Client-side rendering only — The SPA fetches everything after page load. SEO is irrelevant for a dashboard, but initial load time could be improved with server-side rendering or static generation of the shell.
+---
 
-No backup strategy — The Docker Compose setup doesn't include automated backups. If the volume dies, your data dies with it. PostgreSQL needs pg_dump on a schedule, ideally to S3 or another offsite target.
+## ⚖️ Known Limitations
+
+Before deploying, be aware of the following scope limitations currently present in the codebase:
+
+* **Authentication Rigidness:** * No built-in password reset flow. Requires manual database entry to override passwords.
+  * JWTs cannot be explicitly revoked upon logout. Tokens remain valid for their full lifetime until expiration.
+* **Feature Scope:**
+  * **No Data Export:** Data is bound to the database. There is no native export mechanism to CSV, PDF, or OFX.
+  * **No Recurring Transactions:** Scheduled/recurring entries (e.g., monthly rent, recurring subscriptions) must be logged manually every month.
+  * **Single Currency Only:** No exchange rate calculations or multi-currency wallets; financial values are formatted uniformly under a single system currency.
+* **Operational Readiness:**
+  * **No Automated Backups:** The provided Docker Compose layout does not include scheduled cron backups. If the storage volume fails, data loss occurs. Production instances should wrap `pg_dump` on a cron schedule to an external destination (e.g., AWS S3).
+  * **Client-Side Rendering (CSR):** The SPA fetches everything dynamically after the initial script loads. (Though SEO is irrelevant for an internal dashboard, initial load optimizations could be improved later via Server-Side Rendering).
+  * **Minimal Test Coverage:** While unit testing structures exist, code coverage is minimal. Production hardening requires integration suites covering concurrent writes and database rollbacks.
+
+---
+
+## 📈 What I'd Do Differently at Scale
+
+If this application were re-architected to support millions of concurrent global users, the following structural changes would be prioritized:
+
+```
+[Client / UI (Vite + React + CDN)]
+               │
+               ▼
+   [API Gateway / Keycloak (OIDC Auth)]
+               │
+               ▼
+[Event Bus / Message Queue (Kafka/NATS)] ──► [Async Write Worker] ──► [PostgreSQL Primary (Writes)]
+               │                                                                   │
+               ▼                                                                   ▼
+[Read Optimization Service / CQRS] ◄───────────────────────────────── [Read Replicas (Dashboard Queries)]
+```
+
+### 1. Decouple Identity & Access Management (IAM)
+Rolling custom JWT logic becomes a security liability at scale. The authentication layer would be migrated to OAuth2/OIDC standards using an identity provider like **Keycloak**, **Authentik**, or a managed service to offload multi-factor authentication (MFA), audit logging, and secure password recovery.
+
+### 2. Event-Driven Architecture & Async Writes
+To eliminate database contention under heavy user write stress, an event bus (such as **Apache Kafka**, **NATS**, or **RabbitMQ**) would be placed before the persistence layer. Write mutations would process asynchronously, allowing the API to respond immediately while ensuring eventual consistency.
+
+### 3. Read Replicas & CQRS
+Dashboard analytics queries are heavily read-intensive. Implementing **Command Query Responsibility Segregation (CQRS)** would split the database pipeline: a PostgreSQL primary node optimized exclusively for writes, and multiple read-replicas handling real-time dashboard calculations, denormalized views, and materialized aggregations.
+
+### 4. Separate & Modernize the Frontend
+Vanilla JS fails to maintain legibility when features expand past a certain threshold. The frontend would be rebuilt inside a framework ecosystem like **Vite + React/Svelte**, leveraging modular component design, centralized state management, and asset deployment over global Content Delivery Networks (CDNs).
+
+### 5. Multi-Stage CI/CD Deployment Pipeline
+The deployment pipeline would move away from basic standalone container execution and adopt enterprise deployment patterns:
+* **Blue/Green or Canary Deployments** to minimize service interruption.
+* **Automated Database Migrations** (via Liquibase or Flyway) featuring declarative rollback logic.
+* **Feature Flagging** to toggle high-impact visual components safely without coupling releases to deployments.
+
+### 6. Observability Stack Integration
+Standard output logging (`stdout`) and browser console tracking would be swapped for a modern telemetry pipeline: structured logging utilizing **JSON formats**, metrics collection via **Prometheus**, distributed tracing via **OpenTelemetry**, and immediate incident alerting through platforms like **PagerDuty** or **OpsGenie**.
