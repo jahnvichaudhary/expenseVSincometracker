@@ -1,0 +1,39 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: expense-tracker
+  profiles:
+    active: ${SPRING_PROFILE:dev}
+  datasource:
+    url: ${DB_URL:jdbc:h2:file:./data/tracker;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASS:}
+    driver-class-name: ${DB_DRIVER:org.h2.Driver}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+app:
+  jwt:
+    # rotate this in prod via env var. local dev fallback is intentional.
+    secret: ${JWT_SECRET:Y2hhbmdlLW1lLXBsZWFzZS10aGlzLWlzLWEtbG9uZy1kZXYtb25seS1zZWNyZXQta2V5LWZvci1obWFjLXNoYTI1Ni1zaWduaW5n}
+    expiration-ms: 86400000
+  cors:
+    allowed-origins: http://localhost:5173,http://localhost:3000,http://localhost:8080
+
+logging:
+  level:
+    org.springframework.security: INFO
+    com.finance.tracker: DEBUG

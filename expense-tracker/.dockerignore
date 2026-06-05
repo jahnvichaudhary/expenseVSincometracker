@@ -1,0 +1,8 @@
+target
+.idea
+*.iml
+.vscode
+data
+.git
+.gitignore
+README.md

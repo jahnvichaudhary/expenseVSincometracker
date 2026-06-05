@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Finance Tracker</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --line: #334155;
+    --txt: #e2e8f0; --muted: #94a3b8;
+    --green: #22c55e; --red: #ef4444; --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--txt); }
+  header { padding: 18px 28px; border-bottom: 1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-size: 20px; }
+  main { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  input, select, button { padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); background:#0b1220; color: var(--txt); font: inherit; }
+  button { cursor:pointer; background: var(--accent); color:#0b1220; font-weight:600; border:none; }
+  button.secondary { background: transparent; color: var(--txt); border:1px solid var(--line); }
+  button.danger { background: var(--red); color:#fff; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > * { flex:1 1 140px; }
+  table { width:100%; border-collapse: collapse; }
+  th, td { padding:10px; border-bottom:1px solid var(--line); text-align:left; font-size:14px; }
+  .income { color: var(--green); }
+  .expense { color: var(--red); }
+  .stats { display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; }
+  .stat { background:#0b1220; padding:16px; border-radius:8px; border:1px solid var(--line); }
+  .stat .label { color: var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .stat .value { font-size:24px; font-weight:700; margin-top:6px; }
+  .hidden { display:none; }
+  .auth-wrap { max-width: 380px; margin: 80px auto; }
+  .tabs { display:flex; gap:8px; margin-bottom:16px; }
+  .tabs button { flex:1; }
+  .tabs button.inactive { background: transparent; color: var(--muted); border:1px solid var(--line); }
+  .msg { color: var(--red); font-size: 13px; min-height: 18px; margin-top:6px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div id="auth-view" class="auth-wrap">
+  <div class="card">
+    <h1 style="margin-top:0">Finance Tracker</h1>
+    <div class="tabs">
+      <button id="tab-login">Login</button>
+      <button id="tab-register" class="inactive">Register</button>
+    </div>
+    <form id="auth-form">
+      <div id="name-field" class="hidden" style="margin-bottom:10px">
+        <input id="name" placeholder="Full name" />
+      </div>
+      <div style="margin-bottom:10px"><input id="email" type="email" placeholder="Email" required style="width:100%" /></div>
+      <div style="margin-bottom:10px"><input id="password" type="password" placeholder="Password" required style="width:100%" /></div>
+      <button type="submit" style="width:100%">Continue</button>
+      <div class="msg" id="auth-msg"></div>
+    </form>
+  </div>
+</div>
+
+<div id="app-view" class="hidden">
+  <header>
+    <h1>Finance Tracker</h1>
+    <div>
+      <span id="who" style="color:var(--muted); margin-right:12px"></span>
+      <button class="secondary" id="logout">Logout</button>
+    </div>
+  </header>
+  <main>
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><div class="label">Income</div><div class="value income" id="s-income">$0.00</div></div>
+        <div class="stat"><div class="label">Expense</div><div class="value expense" id="s-expense">$0.00</div></div>
+        <div class="stat"><div class="label">Balance</div><div class="value" id="s-balance">$0.00</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Add transaction</h3>
+      <form id="tx-form">
+        <div class="row" style="margin-bottom:10px">
+          <select id="type">
+            <option value="EXPENSE">Expense</option>
+            <option value="INCOME">Income</option>
+          </select>
+          <input id="category" placeholder="Category (e.g. Food)" required />
+          <input id="amount" type="number" step="0.01" min="0.01" placeholder="Amount" required />
+          <input id="date" type="date" required />
+        </div>
+        <div class="row" style="margin-bottom:10px">
+          <input id="description" placeholder="Description (optional)" style="flex:3" />
+          <button type="submit">Add</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Recent transactions</h3>
+      <table>
+        <thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Description</th><th style="text-align:right">Amount</th><th></th></tr></thead>
+        <tbody id="tx-body"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+const API = window.location.origin;
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => '$' + Number(n || 0).toFixed(2);
+
+let token = localStorage.getItem('token');
+let user = JSON.parse(localStorage.getItem('user') || 'null');
+let mode = 'login';
+
+function showAuth() { $('auth-view').classList.remove('hidden'); $('app-view').classList.add('hidden'); }
+function showApp() {
+  $('auth-view').classList.add('hidden'); $('app-view').classList.remove('hidden');
+  $('who').textContent = user ? `${user.name} (${user.role})` : '';
+  loadAll();
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+      ...(opts.headers || {})
+    }
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: 'Request failed' }));
+    throw new Error(err.message || 'Error');
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+$('tab-login').onclick = () => switchMode('login');
+$('tab-register').onclick = () => switchMode('register');
+
+function switchMode(m) {
+  mode = m;
+  $('tab-login').classList.toggle('inactive', m !== 'login');
+  $('tab-register').classList.toggle('inactive', m !== 'register');
+  $('name-field').classList.toggle('hidden', m !== 'register');
+  $('auth-msg').textContent = '';
+}
+
+$('auth-form').onsubmit = async (e) => {
+  e.preventDefault();
+  $('auth-msg').textContent = '';
+  const body = {
+    email: $('email').value.trim(),
+    password: $('password').value
+  };
+  if (mode === 'register') body.name = $('name').value.trim();
+  try {
+    const data = await api('/api/auth/' + mode, { method: 'POST', body: JSON.stringify(body) });
+    token = data.token;
+    user = { name: data.name, email: data.email, role: data.role };
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    showApp();
+  } catch (err) {
+    $('auth-msg').textContent = err.message;
+  }
+};
+
+$('logout').onclick = () => {
+  localStorage.clear(); token = null; user = null; showAuth();
+};
+
+$('date').value = new Date().toISOString().slice(0, 10);
+
+$('tx-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const body = {
+    type: $('type').value,
+    category: $('category').value.trim(),
+    description: $('description').value.trim(),
+    amount: $('amount').value,
+    date: $('date').value
+  };
+  try {
+    await api('/api/transactions', { method: 'POST', body: JSON.stringify(body) });
+    $('category').value = ''; $('amount').value = ''; $('description').value = '';
+    loadAll();
+  } catch (err) { alert(err.message); }
+};
+
+async function loadAll() {
+  try {
+    const [list, sum] = await Promise.all([
+      api('/api/transactions'),
+      api('/api/transactions/summary')
+    ]);
+    $('s-income').textContent = fmt(sum.totalIncome);
+    $('s-expense').textContent = fmt(sum.totalExpense);
+    $('s-balance').textContent = fmt(sum.balance);
+
+    const body = $('tx-body');
+    body.innerHTML = '';
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">No transactions yet.</td></tr>';
+      return;
+    }
+    list.forEach(t => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${t.date}</td>
+        <td class="${t.type === 'INCOME' ? 'income' : 'expense'}">${t.type}</td>
+        <td>${escapeHtml(t.category)}</td>
+        <td>${escapeHtml(t.description || '')}</td>
+        <td style="text-align:right" class="${t.type === 'INCOME' ? 'income' : 'expense'}">${fmt(t.amount)}</td>
+        <td><button class="danger" data-id="${t.id}">Delete</button></td>`;
+      body.appendChild(tr);
+    });
+    body.querySelectorAll('button[data-id]').forEach(b => {
+      b.onclick = async () => {
+        if (!confirm('Delete this transaction?')) return;
+        await api('/api/transactions/' + b.dataset.id, { method: 'DELETE' });
+        loadAll();
+      };
+    });
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('unauth')) {
+      localStorage.clear(); token = null; user = null; showAuth();
+    } else {
+      alert(err.message);
+    }
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+if (token && user) showApp(); else showAuth();
+</script>
+</body>
+</html>
